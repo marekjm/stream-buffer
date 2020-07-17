@@ -15,8 +15,10 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <fcntl.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -206,11 +208,48 @@ auto Buffer::grow(size_type const n) -> void
     level += n;
 }
 
+enum class Commands : uint8_t {
+    Nop,
+    Flush,
+    Resize,
+};
+
 static auto flush(std::vector<uint8_t> const buffer, int const to) -> int
 {
     return write(to, buffer.data(), buffer.size());
 }
-static auto stream_data(std::atomic_bool& sentinel,
+static auto stream_data(Buffer& buffer, int const from, int const to) -> ssize_t
+{
+    auto const read_size = read(from, buffer.head(), buffer.left());
+
+    if (read_size == 0) {
+        std::cerr << "[stream_data] EOF\n";
+        kill(getpid(), SIGQUIT);
+        flush(buffer.drain(), to);
+        return 0;
+    }
+    if (read_size <= 0) {
+        std::cerr << "[stream_data] error " << read_size << ": "
+                  << strerror_r(read_size, nullptr, 0) << "\n";
+        kill(getpid(), SIGQUIT);
+        flush(buffer.drain(), to);
+        return -1;
+    }
+
+    buffer.grow(read_size);
+    std::cerr << "[stream_data] " << read_size << " byte(s) in\n";
+    std::cerr << "[stream_data] buffer is " << buffer.size()
+              << " byte(s) now\n";
+
+    if (buffer.full()) {
+        std::cerr << "[stream_data] draining buffer\n";
+        flush(buffer.drain(), to);
+    }
+
+    return read_size;
+}
+static auto buffer_loop(std::atomic_bool& sentinel,
+                        int const commands_fd,
                         size_t const initial_buffer_size,
                         int const from,
                         int const to) -> void
@@ -218,38 +257,89 @@ static auto stream_data(std::atomic_bool& sentinel,
     std::cerr << "[stream_data] initial buffer size: " << initial_buffer_size
               << " byte(s)\n";
 
-    auto buffer = Buffer{initial_buffer_size};
-    while (not sentinel.load()) {
-        auto const limit = buffer.left();
-        std::cerr << "[stream_data] reading at most " << limit << " byte(s) ("
-                  << buffer.size() << " byte(s) in buffer)\n";
-        auto const read_size = read(from, buffer.head(), limit);
-        if (read_size == 0) {
-            std::cerr << "[stream_data] EOF\n";
+    /*
+     * See epoll(7) for more details.
+     */
+    auto const epoll_fd = epoll_create(2);
+    if (epoll_fd == -1) {
+        std::cerr << "error: could not epoll(7) fd: " << errno
+                  << strerror(errno) << "\n";
+        kill(getpid(), SIGQUIT);
+        return;
+    }
+    {
+        epoll_event ev;
+        ev.events  = EPOLLIN;
+        ev.data.fd = from;
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, from, &ev) == -1) {
+            std::cerr << "error: could not add epoll(7) event for input fd: "
+                      << errno << strerror(errno) << "\n";
             kill(getpid(), SIGQUIT);
-            flush(buffer.drain(), to);
-            break;
-        }
-        if (read_size <= 0) {
-            std::cerr << "[stream_data] error " << read_size << ": "
-                      << strerror_r(read_size, nullptr, 0) << "\n";
-            kill(getpid(), SIGQUIT);
-            flush(buffer.drain(), to);
-            break;
-        }
-
-        buffer.grow(read_size);
-        std::cerr << "[stream_data] " << read_size << " byte(s) in\n";
-        std::cerr << "[stream_data] buffer is " << buffer.size()
-                  << " byte(s) now\n";
-
-        if (buffer.full()) {
-            std::cerr << "[stream_data] draining buffer\n";
-            flush(buffer.drain(), to);
+            return;
         }
     }
+    {
+        epoll_event ev;
+        ev.events  = EPOLLIN;
+        ev.data.fd = commands_fd;
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, commands_fd, &ev) == -1) {
+            std::cerr << "error: could not add epoll(7) event for control fd: "
+                      << errno << strerror(errno) << "\n";
+            kill(getpid(), SIGQUIT);
+            return;
+        }
+    }
+
+    auto buffer = Buffer{initial_buffer_size};
+    while (not sentinel.load()) {
+        std::cerr << "[stream_data] reading at most " << buffer.left()
+                  << " byte(s) (" << buffer.size() << " byte(s) in buffer)\n";
+
+        std::array<epoll_event, 2> events;
+        auto const nfds =
+            epoll_wait(epoll_fd, events.data(), events.size(), -1);
+        if (nfds == -1) {
+            std::cerr << "error: failed call to epoll_wait(2)\n";
+            kill(getpid(), SIGQUIT);
+            flush(buffer.drain(), to);
+            break;
+        }
+        if (nfds == 0) {
+            // FIXME isn't this a bug? no fds are ready and yet epoll_wait()
+            // returned?
+            continue;
+        }
+
+        for (auto i = 0; i < nfds; ++i) {
+            if (events[i].data.fd == from) {
+                auto const res = stream_data(buffer, from, to);
+                if (res <= 0) {
+                    return;
+                }
+            } else if (events[i].data.fd == commands_fd) {
+                auto command = Commands::Nop;
+                read(commands_fd, &command, 1);
+                switch (command) {
+                case Commands::Flush:
+                    std::cerr << "[stream_data] flush\n";
+                    flush(buffer.drain(), to);
+                    break;
+                case Commands::Resize:
+                    // FIXME implement
+                    break;
+                case Commands::Nop:
+                default:
+                    break;
+                }
+            }
+        }
+    }
+
+    stream_data(buffer, from, to);
+    flush(buffer.drain(), to);
 }
-static auto receive_commands(std::atomic_bool& sentinel) -> void
+static auto receive_commands(std::atomic_bool& sentinel, int const commands_fd)
+    -> void
 {
     sigset_t mask;
     sigemptyset(&mask);
@@ -279,12 +369,17 @@ static auto receive_commands(std::atomic_bool& sentinel) -> void
 
         if (signal_no == SIGHUP) {
             std::cerr << "[receive_commands] flush\n";
+            auto const command = Commands::Flush;
+            write(commands_fd, reinterpret_cast<uint8_t const*>(&command), 1);
         } else if (signal_no == SIGUSR1) {
             std::cerr << "[receive_commands] resize buffer: " << info.si_int
                       << "\n";
+        } else if (signal_no == SIGUSR2) {
+            std::cerr << "[receive_commands] resize buffer: " << info.si_int
+                      << "\n";
+        } else {
+            sentinel.store(true);
         }
-
-        sentinel.store(true);
     }
 }
 
@@ -310,13 +405,38 @@ auto main(int argc, char** argv) -> int
         pthread_sigmask(SIG_BLOCK, &mask, nullptr);
     }
 
-    std::atomic_bool sentinel = false;
-    auto worker =
-        std::thread{stream_data, std::ref(sentinel), initial_buffer_size, 0, 1};
-    auto controller = std::thread{receive_commands, std::ref(sentinel)};
+    {
+        std::atomic_bool sentinel = false;
 
-    controller.join();
-    worker.join();
+        auto read_end  = int{-1};
+        auto write_end = int{-1};
+        {
+            /*
+             * See pipe2(2) and pipe(7) for more details.
+             */
+            std::array<int, 2> fds;
+            auto res = pipe2(fds.data(), O_DIRECT);
+            if (res == -1) {
+                std::cerr << "error: could not create pipe: " << errno
+                          << strerror(errno) << "\n";
+                return 1;
+            }
+            read_end  = fds[0];
+            write_end = fds[1];
+        }
+
+        auto worker = std::thread{buffer_loop,
+                                  std::ref(sentinel),
+                                  read_end,
+                                  initial_buffer_size,
+                                  0,
+                                  1};
+        auto controller =
+            std::thread{receive_commands, std::ref(sentinel), write_end};
+
+        controller.join();
+        worker.join();
+    }
 
     std::cerr << "[main] done\n";
 
