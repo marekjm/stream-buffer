@@ -24,6 +24,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -103,6 +104,7 @@ struct Buffer {
 
     auto drain() -> buffer_type;
     auto grow(size_type const) -> void;
+    auto resize(size_type const) -> size_type;
 };
 Buffer::Buffer(size_type const sz)
 {
@@ -140,6 +142,17 @@ auto Buffer::drain() -> buffer_type
 auto Buffer::grow(size_type const n) -> void
 {
     level += n;
+}
+auto Buffer::resize(size_type const n) -> size_type
+{
+    auto const old_capacity = buffer.capacity();
+
+    buffer.clear();
+    buffer.reserve(n);
+    buffer.resize(n);
+    buffer.shrink_to_fit();
+
+    return old_capacity;
 }
 
 enum class Commands : uint8_t {
@@ -244,8 +257,34 @@ static auto buffer_loop(std::atomic_bool& sentinel,
                     flush(buffer.drain(), to);
                     break;
                 case Commands::Resize:
-                    // FIXME implement
+                {
+                    std::cerr << "elo\n";
+                    std::array<uint8_t, 5> data{0};
+                    read(commands_fd, data.begin(), data.size());
+                    std::cerr << "ziom\n";
+
+                    auto unit = static_cast<Unit>(data[0]);
+                    auto size = uint32_t{};
+                    std::memcpy(&size, data.begin() + 1, sizeof(size));
+
+                    std::cerr << "top\n";
+                    flush(buffer.drain(), to);
+                    std::cerr << "kek\n";
+
+                    auto const new_size =
+                        size * static_cast<uint64_t>(UNIT_SIZES.at(unit));
+
+                    std::cerr << "resize to: " << size << " of "
+                              << static_cast<uint16_t>(unit) << "\n";
+                    std::cerr << "  i.e.: " << new_size << " byte(s)\n";
+
+                    auto const old_size = buffer.resize(new_size);
+                    std::cerr << "boom\n";
+                    std::cerr << "[buffer] resized: " << old_size << " => "
+                              << new_size << "\n";
+
                     break;
+                }
                 case Commands::Nop:
                 default:
                     break;
@@ -284,7 +323,6 @@ static auto receive_commands(std::atomic_bool& sentinel, int const commands_fd)
             auto const command = Commands::Flush;
             write(commands_fd, reinterpret_cast<uint8_t const*>(&command), 1);
         } else if (signal_no == SIGUSR1) {
-            /* auto const command = Commands::Resize; */
             std::cerr << "received SIGUSR1:\n";
             std::cerr << "  .si_code: "
                       << (info.si_code == SI_QUEUE ? "SI_QUEUE" : "(none)")
@@ -301,12 +339,21 @@ static auto receive_commands(std::atomic_bool& sentinel, int const commands_fd)
             std::cerr << "payload: " << payload << "\n";
 
             auto const unit = static_cast<Unit>(payload >> 28);
-            auto const size = static_cast<size_t>(payload & SIZE_MASK);
+            auto const size = static_cast<uint32_t>(payload & SIZE_MASK);
             std::cerr << "resize to: " << size << " of "
                       << static_cast<uint16_t>(unit) << "\n";
             std::cerr << "  i.e.: "
                       << (size * static_cast<uint64_t>(UNIT_SIZES.at(unit)))
                       << " byte(s)\n";
+
+            auto const command = static_cast<uint8_t>(Commands::Resize);
+            write(commands_fd, &command, 1);
+
+            std::array<uint8_t, 5> data{0};
+            data[0] = static_cast<uint8_t>(unit);
+            std::memcpy(data.begin() + 1, &size, sizeof(size));
+
+            write(commands_fd, data.data(), data.size());
         } else {
             sentinel.store(true);
         }
