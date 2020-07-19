@@ -15,5 +15,4 @@ while true; do
         tr -d '\n' |
         fold
     echo
-    sleep 0.5
 done
