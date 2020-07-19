@@ -29,85 +29,17 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
+// FIXME do not group custom includes with POSIX and C library includes
+// clang-format off
+#include <stream-buffer/stream-buffer.h>
+// clang-format on
 
-constexpr auto VERSION = "0.0.1";
 
-
-enum class Unit : uint8_t {
-    B,
-    KB,
-    KiB,
-    MB,
-    MiB,
-    GB,
-    GiB,
-    TB,
-    TiB,
-    PB,
-    PiB,
-};
-enum class In_bytes : uint64_t {
-    B   = 1,
-    KB  = 1000,
-    KiB = 1024,
-    MB  = KB * KB,
-    MiB = KiB * KiB,
-    GB  = KB * MB,
-    GiB = KiB * MiB,
-    TB  = KB * GB,
-    TiB = KiB * GiB,
-    PB  = KB * TB,
-    PiB = KiB * GiB,
-};
-
-auto const UNIT_NAMES = std::map<std::string, Unit>{
-    {"B", Unit::B},
-    {"KB", Unit::KB},
-    {"KiB", Unit::KiB},
-    {"MB", Unit::MB},
-    {"MiB", Unit::MiB},
-    {"GB", Unit::GB},
-    {"GiB", Unit::GiB},
-    {"TB", Unit::TB},
-    {"TiB", Unit::TiB},
-    {"PB", Unit::PB},
-    {"PiB", Unit::PiB},
-};
-auto const UNIT_SIZES = std::map<Unit, In_bytes>{
-    {Unit::B, In_bytes::B},
-    {Unit::KB, In_bytes::KB},
-    {Unit::KiB, In_bytes::KiB},
-    {Unit::MB, In_bytes::MB},
-    {Unit::MiB, In_bytes::MiB},
-    {Unit::GB, In_bytes::GB},
-    {Unit::GiB, In_bytes::GiB},
-    {Unit::TB, In_bytes::TB},
-    {Unit::TiB, In_bytes::TiB},
-    {Unit::PB, In_bytes::PB},
-    {Unit::PiB, In_bytes::PiB},
-};
-
-static auto parse_buffer_size(std::string_view const s) -> size_t
-{
-    auto const sep = s.find_first_not_of("0123456789");
-    auto const n   = s.substr(0, sep);
-    auto const u =
-        std::string{(sep == std::string_view::npos) ? "B" : s.substr(sep)};
-
-    try {
-        auto const unit = UNIT_SIZES.at(UNIT_NAMES.at(u));
-        auto const value =
-            std::strtoull(n.data(), nullptr, 0) * static_cast<uint64_t>(unit);
-
-        return value;
-    } catch (std::out_of_range const&) {
-        std::cerr << "error: invalid unit: `" << u << "'\n";
-        exit(1);
-    }
-}
+using namespace Stream_buffer;
 
 static auto help_or_version(int argc, char** argv) -> bool
 {
@@ -145,6 +77,8 @@ static auto help_or_version(int argc, char** argv) -> bool
         }
         std::cout << "fingerprint: " << STREAM_BUFFER_FINGERPRINT << "\n";
         std::cout << "siginfo_t's si_int size: " << sizeof(siginfo_t::si_int)
+                  << " bytes\n";
+        std::cout << "siginfo_t's si_ptr size: " << sizeof(siginfo_t::si_ptr)
                   << " bytes\n";
     }
     return true;
@@ -223,26 +157,18 @@ static auto stream_data(Buffer& buffer, int const from, int const to) -> ssize_t
     auto const read_size = read(from, buffer.head(), buffer.left());
 
     if (read_size == 0) {
-        std::cerr << "[stream_data] EOF\n";
         kill(getpid(), SIGQUIT);
         flush(buffer.drain(), to);
         return 0;
     }
     if (read_size <= 0) {
-        std::cerr << "[stream_data] error " << read_size << ": "
-                  << strerror_r(read_size, nullptr, 0) << "\n";
         kill(getpid(), SIGQUIT);
         flush(buffer.drain(), to);
         return -1;
     }
 
     buffer.grow(read_size);
-    std::cerr << "[stream_data] " << read_size << " byte(s) in\n";
-    std::cerr << "[stream_data] buffer is " << buffer.size()
-              << " byte(s) now\n";
-
     if (buffer.full()) {
-        std::cerr << "[stream_data] draining buffer\n";
         flush(buffer.drain(), to);
     }
 
@@ -254,9 +180,6 @@ static auto buffer_loop(std::atomic_bool& sentinel,
                         int const from,
                         int const to) -> void
 {
-    std::cerr << "[stream_data] initial buffer size: " << initial_buffer_size
-              << " byte(s)\n";
-
     /*
      * See epoll(7) for more details.
      */
@@ -292,9 +215,6 @@ static auto buffer_loop(std::atomic_bool& sentinel,
 
     auto buffer = Buffer{initial_buffer_size};
     while (not sentinel.load()) {
-        std::cerr << "[stream_data] reading at most " << buffer.left()
-                  << " byte(s) (" << buffer.size() << " byte(s) in buffer)\n";
-
         std::array<epoll_event, 2> events;
         auto const nfds =
             epoll_wait(epoll_fd, events.data(), events.size(), -1);
@@ -321,7 +241,6 @@ static auto buffer_loop(std::atomic_bool& sentinel,
                 read(commands_fd, &command, 1);
                 switch (command) {
                 case Commands::Flush:
-                    std::cerr << "[stream_data] flush\n";
                     flush(buffer.drain(), to);
                     break;
                 case Commands::Resize:
@@ -349,34 +268,45 @@ static auto receive_commands(std::atomic_bool& sentinel, int const commands_fd)
     sigaddset(&mask, SIGPIPE);
     sigaddset(&mask, SIGQUIT);
     sigaddset(&mask, SIGUSR1);
-    sigaddset(&mask, SIGUSR2);
 
     while (not sentinel.load()) {
         siginfo_t info;
         auto const signal_no = sigwaitinfo(&mask, &info);
 
         if (signal_no == 0) {
-            std::cerr << "[receive_commands] spurious wakeup\n";
             continue;
         }
         if (signal_no == -1) {
-            std::cerr << "[receive_commands] error\n";
             continue;
         }
 
-        std::cerr << "[receive_commands] received signal " << signal_no << ": "
-                  << strsignal(signal_no) << "\n";
-
         if (signal_no == SIGHUP) {
-            std::cerr << "[receive_commands] flush\n";
             auto const command = Commands::Flush;
             write(commands_fd, reinterpret_cast<uint8_t const*>(&command), 1);
         } else if (signal_no == SIGUSR1) {
-            std::cerr << "[receive_commands] resize buffer: " << info.si_int
+            /* auto const command = Commands::Resize; */
+            std::cerr << "received SIGUSR1:\n";
+            std::cerr << "  .si_code: "
+                      << (info.si_code == SI_QUEUE ? "SI_QUEUE" : "(none)")
                       << "\n";
-        } else if (signal_no == SIGUSR2) {
-            std::cerr << "[receive_commands] resize buffer: " << info.si_int
+            std::cerr << "  .si_int: " << info.si_int << "\n";
+            std::cerr << "  .si_ptr: " << info.si_ptr << "\n";
+            std::cerr << "  .si_value.sival_int: " << info.si_value.sival_int
                       << "\n";
+            std::cerr << "  .si_value.sival_ptr: " << info.si_value.sival_ptr
+                      << "\n";
+
+            constexpr auto SIZE_MASK = uint32_t{0x0fffffff};
+            auto const payload = static_cast<uint32_t>(info.si_value.sival_int);
+            std::cerr << "payload: " << payload << "\n";
+
+            auto const unit = static_cast<Unit>(payload >> 28);
+            auto const size = static_cast<size_t>(payload & SIZE_MASK);
+            std::cerr << "resize to: " << size << " of "
+                      << static_cast<uint16_t>(unit) << "\n";
+            std::cerr << "  i.e.: "
+                      << (size * static_cast<uint64_t>(UNIT_SIZES.at(unit)))
+                      << " byte(s)\n";
         } else {
             sentinel.store(true);
         }
@@ -437,8 +367,6 @@ auto main(int argc, char** argv) -> int
         controller.join();
         worker.join();
     }
-
-    std::cerr << "[main] done\n";
 
     return 0;
 }

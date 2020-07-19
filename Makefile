@@ -171,6 +171,7 @@ CXXFLAGS=\
 		 -DSTREAM_BUFFER_FINGERPRINT="\"$(shell ./scripts/get_code_fingerprint.sh)\"" \
 		 $(COMPILER_FLAGS) \
 		 $(OPTIMISATION_FLAG) \
+		 $(INCLUDE_FLAGS) \
 		 -lpthread
 
 
@@ -186,15 +187,25 @@ BIN_PATH=$(PREFIX)/bin
 	uninstall \
 	format
 
-all: build/stream-buffer
+all: \
+	build/stream-buffer \
+	build/stream-buffer-ctl
 
 build/%.o: src/%.cpp
 	@echo "$(CXX) -> $@"
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 build/stream-buffer: \
-	build/main.o
-	@$(CXX) $(CXXFLAGS) -o $@ $<
+	build/main.o \
+	build/common.o
+	@echo "$@"
+	@$(CXX) $(CXXFLAGS) -o $@ $^
+
+build/stream-buffer-ctl: \
+	build/ctl.o \
+	build/common.o
+	@echo "$@"
+	@$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:
 	rm -rf build
