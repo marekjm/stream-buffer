@@ -169,6 +169,7 @@ CXXFLAGS=\
 		 -std=$(CXX_STANDARD) \
 		 -DSTREAM_BUFFER_COMMIT="\"$(shell ./scripts/get_head_commit.sh)\"" \
 		 -DSTREAM_BUFFER_FINGERPRINT="\"$(shell ./scripts/get_code_fingerprint.sh)\"" \
+		 -g \
 		 $(COMPILER_FLAGS) \
 		 $(OPTIMISATION_FLAG) \
 		 $(INCLUDE_FLAGS) \
