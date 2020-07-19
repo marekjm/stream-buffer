@@ -70,6 +70,8 @@ auto main(int argc, char** argv) -> int
         sigval value;
         value.sival_int = payload;
         sigqueue(pid_of_buffer, SIGUSR1, value);
+    } else if (command == "stop") {
+        kill(pid_of_buffer, SIGTERM);
     }
 
     return 0;
