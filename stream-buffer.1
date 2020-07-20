@@ -1,0 +1,119 @@
+.\" Process this file with
+.\"     groff -Tascii -man stream-buffer.1
+.\"
+.TH STREAM-BUFFER 1 "2020-07-21" "stream-buffer 0\&.1\&.0" "User Commands"
+.SH NAME
+stream-buffer \- buffer standard input
+.SH SYNOPSIS
+stream-buffer [<size>]
+.nf
+\fB             \fR [\-\-help\]
+.nf
+\fB             \fR \-\-version [\-\-verbose]
+.sp
+stream-buffer-ctl <pid> flush
+stream-buffer-ctl <pid> resize <size>
+.SH DESCRIPTION
+.BR stream-buffer (1)
+buffers data received on standard input stream before sending
+it to standard output stream.
+.sp
+The initial buffer size is specified by
+.I <size>
+argument, and can be adjusted at runtime. If ommited, defaults to 4KiB (see
+\fBBUFFER SIZES\fR for more details).
+.sp
+Flushing can be forced before the buffer is full by sending
+.B SIGHUP
+to the
+.BR stream-buffer (1)
+process.
+.SH OPTIONS
+.PP
+--help
+.RS
+Display available help screen.
+.RE
+.PP
+--version
+.RS
+Display version information.
+.RE
+.PP
+--verbose
+.RS
+Display extra information when displaying version.
+.RE
+.SH "BUFFER SIZES"
+Buffer sizes (the
+.I <size>
+argument) are specified by giving a \fIvalue\fR and a \fIunit\fR. If the
+\fIunit\fR is ommited it defaults to \fBB\fR.
+.SS B - byte
+Byte.
+.SS KB - kilobyte
+1000 bytes.
+.SS KiB - kibibyte
+1024 bytes.
+.SS MB
+1000 KB, 10e6 bytes.
+.SS MiB - mebibyte
+1024 KiB, 1048576 bytes.
+.SS GB - gigabyte
+1000 MB, 10e9 bytes.
+.SS GiB - gibibyte
+1024 MiB, 1073741824 bytes.
+.sp
+When \fI<size>\fR is given with a unit the buffer size is calculated as X
+times the amount of bytes in the \fIunit\fR. For example: 4KiB means 4096
+bytes, and 4KB means 4000 bytes.
+.SH SIGNALS
+Running
+.BR stream-buffer (1)
+process can be controlled using signals.
+.\" ...
+.SS SIGINT, SIGTERM
+Flush the buffer and exit.
+.\" ...
+.SS SIGQUIT
+Flush the buffer and exit. Used internally.
+.\" ...
+.SS SIGHUP
+Flush the buffer.
+.SH EXAMPLES
+How to use the program.
+.SS Setting up a buffer
+Buffer output from a program:
+.sp
+.RS
+$ some-program | stream-buffer 16KiB
+.RE
+.sp
+The above invocation will buffer the standard output of some-program and emit it
+in 16KiB blocks.
+.SS Flushin a buffer
+Force-flush a buffer:
+.sp
+.RS
+$ stream-buffer-ctl 12345 flush
+.nf
+$ kill -s SIGHUP 12345
+.RE
+.sp
+Assuming that a PID of running buffer is 12345, either of the above commands
+will flush its contents.
+.SS Resizing a buffer
+Resize a buffer at runtime:
+.sp
+.RS
+$ stream-buffer-ctl 12345 resize 8KiB
+.RE
+.sp
+Assuming that a PID of running buffer is 12345, the above command will flush its
+current contents and resize it to 8KiB.
+.SH "SEE ALSO"
+.BR stdbuf (1),
+.BR kill (1),
+.BR signal (7)
+.SH AUTHOR
+Marek Marecki \fI<marekjm@ozro.pw>\fR

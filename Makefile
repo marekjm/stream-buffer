@@ -178,6 +178,7 @@ CXXFLAGS=\
 
 PREFIX=/usr/local
 BIN_PATH=$(PREFIX)/bin
+MAN_PATH=$(PREFIX)/man
 
 .SUFFIXES: .cpp .h .o
 
@@ -214,10 +215,15 @@ clean:
 	@touch build/.gitkeep
 
 install:
-	cp -v ./build/stream-buffer $(BIN_PATH)/
+	@cp -v ./build/stream-buffer $(BIN_PATH)/
+	@cp -v ./build/stream-buffer-ctl $(BIN_PATH)/
+	@mkdir -p $(MAN_PATH)/man1
+	@cp -v ./stream-buffer.1 $(MAN_PATH)/man1/
 
 uninstall:
-	rm -f $(BIN_PATH)/
+	rm -f $(BIN_PATH)/stream-buffer
+	rm -f $(BIN_PATH)/stream-buffer-ctl
+	rm -f $(MAN_PATH)/man1/stream-buffer.1
 
 format:
 	find ./src -name '*.cpp' | xargs -n 1 clang-format -i
