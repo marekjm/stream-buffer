@@ -7,41 +7,63 @@ sending to its standard output stream.
 
 --------------------------------------------------------------------------------
 
-## Resizing and flushing buffers
+# Installation
 
-To resize buffer to 42 of whatever unit is set:
+Assuming you have GCC installed, these commands should install `stream-buffer`
+on your system:
 
-    /usr/bin/kill -s SIGUSR1 -q 42 -- 123456
+    $ make -j 4
+    $ make PREFIX=~/.local install
 
-To resize buffer to 1 of new unit:
+To uninstall the program:
 
-    /usr/bin/kill -s SIGUSR2 -q X -- 123456
+    $ make PREFIX=~/.local uninstall
 
-...where `X` is the integer index of the desired unit:
+Two executables are produced and installed:
 
-- 0: B
-- 1: KB
-- 2: KiB
-- 3: MB
-- 4: MiB
-- 5: GB
-- 6: GiB
-- 7: TB
-- 8: TiB
-- 9: PB
-- 10: PiB
+- `stream-buffer`: the main executable
+- `stream-buffer-ctl`: the support program providing control over running
+  buffers
 
-To flush the buffer *right now*:
+--------------------------------------------------------------------------------
 
-    /usr/bin/kill -s SIGHUP -- 123456
+# Examples
+
+Some quick-start commands.
+
+## Starting the buffer
+
+Use the buffer as you would use, e.g., `tee(1)` - pipe the output of some
+process to it and let stream buffer handle buffering:
+
+    $ some-process --produce=logs | stream-buffer 64KiB > some-process.log
+
+## Resizing buffers
+
+Resize the buffer while it is streaming data:
+
+    $ stream-buffer-ctl 123456 resize 8KiB
+
+Be aware that the buffer is flushed before resizing.
+
+## Flushing buffers
+
+Flushing buffer is accomplished by sending it the `SIGHUP` signal:
+
+    $ kill -s SIGHUP 123456
+    $ stream-buffer-ctl 123456 flush
+
+Do it either using `kill(1)` or the control program.
 
 --------------------------------------------------------------------------------
 
 ## Why not `stdbuf(1)`?
 
 Because `stdbuf(1)` works by adjusting standard streams settings and then
-`execvp(2)`-ing the program. If the "buffered" program adjusts these settings by
-itself `stdbuf(1)` does nothing to affect that.
+`execvp(2)`-ing the program. This means that:
+
+- if the "buffered" program adjusts these settings by itself `stdbuf(1)` does
+  nothing to affect that
 
 `stream-buffer` works by placing itself as a middleman - it receives data on
 standard input, buffers it, and sends it to its standard output. Thus, even if
