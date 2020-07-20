@@ -25,7 +25,7 @@
 
 
 namespace Stream_buffer {
-constexpr auto VERSION = "0.0.1";
+constexpr auto VERSION = "0.1.0";
 
 
 enum class Unit : uint8_t {
