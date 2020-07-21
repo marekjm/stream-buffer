@@ -199,6 +199,7 @@ build/%.o: src/%.cpp
 
 build/stream-buffer: \
 	build/main.o \
+	build/buffer.o \
 	build/common.o
 	@echo "$@"
 	@$(CXX) $(CXXFLAGS) -o $@ $^

@@ -22,10 +22,34 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 
 namespace Stream_buffer {
 constexpr auto VERSION = "0.1.0";
+
+
+struct Buffer {
+    using buffer_type = std::vector<uint8_t>;
+    using size_type   = std::vector<uint8_t>::size_type;
+
+  private:
+    buffer_type buffer;
+    size_type level{0};
+
+  public:
+    Buffer(size_type const);
+
+    auto left() const -> size_type;
+    auto size() const -> size_type;
+    auto full() const -> bool;
+
+    auto head() -> uint8_t*;
+
+    auto drain() -> buffer_type;
+    auto grow(size_type const) -> void;
+    auto resize(size_type const) -> size_type;
+};
 
 
 enum class Unit : uint8_t {
