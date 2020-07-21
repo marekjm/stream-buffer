@@ -30,8 +30,9 @@ constexpr auto VERSION = "0.1.0";
 
 
 struct Buffer {
-    using buffer_type = std::vector<uint8_t>;
-    using size_type   = std::vector<uint8_t>::size_type;
+    using char_type   = uint8_t;
+    using buffer_type = std::vector<char_type>;
+    using size_type   = buffer_type::size_type;
 
   private:
     buffer_type buffer;
@@ -44,7 +45,7 @@ struct Buffer {
     auto size() const -> size_type;
     auto full() const -> bool;
 
-    auto head() -> uint8_t*;
+    auto head() -> char_type*;
 
     auto drain() -> buffer_type;
     auto grow(size_type const) -> void;
@@ -109,6 +110,6 @@ auto const UNIT_SIZES = std::map<Unit, In_bytes>{
 
 auto split_size_spec(std::string_view const s) -> std::pair<size_t, Unit>;
 auto parse_buffer_size(std::string_view const s) -> size_t;
-}
+}  // namespace Stream_buffer
 
 #endif
