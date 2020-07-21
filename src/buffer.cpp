@@ -15,42 +15,60 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <stream-buffer/stream-buffer.h>
+
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
-#include <stream-buffer/stream-buffer.h>
 
 namespace Stream_buffer {
-Buffer::Buffer(size_type const sz) {
-  buffer.reserve(sz);
-  buffer.resize(buffer.capacity());
+Buffer::Buffer(size_type const sz)
+{
+    buffer.reserve(sz);
+    buffer.resize(buffer.capacity());
 }
-auto Buffer::left() const -> size_type { return (buffer.capacity() - level); }
-auto Buffer::size() const -> size_type { return level; }
-auto Buffer::full() const -> bool {
-  return (level == buffer.capacity());
-  ;
+auto Buffer::left() const -> size_type
+{
+    return (buffer.capacity() - level);
 }
-auto Buffer::head() -> uint8_t * { return (buffer.data() + level); }
-auto Buffer::drain() -> buffer_type {
-  auto x = std::move(buffer);
-  x.resize(level);
+auto Buffer::size() const -> size_type
+{
+    return level;
+}
+auto Buffer::full() const -> bool
+{
+    return (level == buffer.capacity());
+    ;
+}
+auto Buffer::head() -> char_type*
+{
+    return (buffer.data() + level);
+}
+auto Buffer::drain() -> buffer_type
+{
+    auto x = std::move(buffer);
+    x.resize(level);
 
-  buffer.reserve(x.capacity());
-  buffer.resize(buffer.capacity());
-  level = 0;
+    buffer.reserve(x.capacity());
+    buffer.resize(buffer.capacity());
+    level = 0;
 
-  return x;
+    return x;
 }
-auto Buffer::grow(size_type const n) -> void { level += n; }
-auto Buffer::resize(size_type const n) -> size_type {
-  auto const old_capacity = buffer.capacity();
+auto Buffer::grow(size_type const n) -> void
+{
+    level += n;
+}
+auto Buffer::resize(size_type const n) -> size_type
+{
+    auto const old_capacity = buffer.capacity();
 
-  buffer.clear();
-  buffer.reserve(n);
-  buffer.resize(n);
-  buffer.shrink_to_fit();
+    buffer.clear();
+    buffer.reserve(n);
+    buffer.resize(n);
+    buffer.shrink_to_fit();
 
-  return old_capacity;
+    return old_capacity;
 }
-}
+}  // namespace Stream_buffer
