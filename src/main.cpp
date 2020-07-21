@@ -29,6 +29,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -95,7 +96,10 @@ static auto flush(std::vector<uint8_t> const buffer, int const to) -> int
 {
     return write(to, buffer.data(), buffer.size());
 }
-static auto stream_data(Buffer& buffer, int const from, int const to) -> ssize_t
+static auto stream_data(Buffer& buffer,
+                        std::optional<char> line_buffered,
+                        int const from,
+                        int const to) -> ssize_t
 {
     auto const read_size = read(from, buffer.head(), buffer.left());
 
@@ -111,8 +115,18 @@ static auto stream_data(Buffer& buffer, int const from, int const to) -> ssize_t
     }
 
     buffer.grow(read_size);
+
     if (buffer.full()) {
         flush(buffer.drain(), to);
+        return read_size;
+    }
+
+    if (line_buffered.has_value()) {
+        if (auto line = buffer.get_line(*line_buffered); line) {
+            auto line_buf = std::move(*line);
+            line_buf.push_back(*line_buffered);
+            flush(std::move(line_buf), to);
+        }
     }
 
     return read_size;
@@ -120,6 +134,7 @@ static auto stream_data(Buffer& buffer, int const from, int const to) -> ssize_t
 static auto buffer_loop(std::atomic_bool& sentinel,
                         int const commands_fd,
                         size_t const initial_buffer_size,
+                        std::optional<char> const line_buffered,
                         int const from,
                         int const to) -> void
 {
@@ -175,7 +190,7 @@ static auto buffer_loop(std::atomic_bool& sentinel,
 
         for (auto i = 0; i < nfds; ++i) {
             if (events[i].data.fd == from) {
-                auto const res = stream_data(buffer, from, to);
+                auto const res = stream_data(buffer, line_buffered, from, to);
                 if (res <= 0) {
                     return;
                 }
@@ -223,7 +238,7 @@ static auto buffer_loop(std::atomic_bool& sentinel,
         }
     }
 
-    stream_data(buffer, from, to);
+    stream_data(buffer, std::nullopt, from, to);
     flush(buffer.drain(), to);
 }
 static auto receive_commands(std::atomic_bool& sentinel, int const commands_fd)
@@ -296,8 +311,28 @@ auto main(int argc, char** argv) -> int
         return 0;
     }
 
-    auto const initial_buffer_size =
-        parse_buffer_size((argc > 1) ? argv[1] : "4KiB");
+    auto line_buffered   = false;
+    auto line_ending     = '\n';
+    auto buffer_size_arg = std::string{"4KiB"};
+
+    {
+        auto i = 1;
+        for (; i < argc; ++i) {
+            auto const each = std::string{argv[i]};
+            if (each.find("--") != 0) {
+                break;
+            }
+            if (each == "--line") {
+                line_buffered = true;
+                continue;
+            }
+        }
+        if (i < argc) {
+            buffer_size_arg = argv[i];
+        }
+    }
+
+    auto const initial_buffer_size = parse_buffer_size(buffer_size_arg);
 
     {
         sigset_t mask;
@@ -332,12 +367,14 @@ auto main(int argc, char** argv) -> int
             write_end = fds[1];
         }
 
-        auto worker = std::thread{buffer_loop,
-                                  std::ref(sentinel),
-                                  read_end,
-                                  initial_buffer_size,
-                                  0,
-                                  1};
+        auto worker = std::thread{
+            buffer_loop,
+            std::ref(sentinel),
+            read_end,
+            initial_buffer_size,
+            (line_buffered ? std::optional<char>{line_ending} : std::nullopt),
+            0,
+            1};
         auto controller =
             std::thread{receive_commands, std::ref(sentinel), write_end};
 

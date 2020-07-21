@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -48,6 +49,8 @@ struct Buffer {
     auto head() -> char_type*;
 
     auto drain() -> buffer_type;
+    auto get_line(char_type const) -> std::optional<buffer_type>;
+
     auto grow(size_type const) -> void;
     auto resize(size_type const) -> size_type;
 };

@@ -56,6 +56,28 @@ auto Buffer::drain() -> buffer_type
 
     return x;
 }
+auto Buffer::get_line(char_type const delimiter) -> std::optional<buffer_type>
+{
+    auto const pos = std::find(buffer.begin(), buffer.end(), delimiter);
+    if (pos == buffer.end()) {
+        return {};
+    }
+
+    auto line = buffer_type{};
+    line.reserve(pos - buffer.begin());
+    std::copy(buffer.begin(), pos, std::back_inserter(line));
+
+    auto rest = buffer_type{};
+    rest.reserve(buffer.capacity());
+    std::copy(pos + 1, buffer.begin() + size(), std::back_inserter(rest));
+
+    level = rest.size();
+    rest.resize(buffer.capacity());
+
+    buffer = std::move(rest);
+
+    return line;
+}
 auto Buffer::grow(size_type const n) -> void
 {
     level += n;

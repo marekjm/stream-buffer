@@ -5,7 +5,7 @@
 .SH NAME
 stream-buffer \- buffer standard input
 .SH SYNOPSIS
-stream-buffer [<size>]
+stream-buffer [--line] [<size>]
 .nf
 \fB             \fR [\-\-help\]
 .nf
@@ -43,6 +43,12 @@ Display version information.
 --verbose
 .RS
 Display extra information when displaying version.
+.RE
+.PP
+--line
+.RS
+Run in line-buffering mode. Produce output a line at a time, unless the buffer
+is full (which causes a full flush).
 .RE
 .SH "BUFFER SIZES"
 Buffer sizes (the
