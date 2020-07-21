@@ -227,4 +227,5 @@ uninstall:
 	rm -f $(MAN_PATH)/man1/stream-buffer.1
 
 format:
-	find ./src -name '*.cpp' | xargs -n 1 clang-format -i
+	find ./src -name '*.cpp' | xargs -n 1 --verbose clang-format -i
+	find ./include -name '*.h' | xargs -n 1 --verbose clang-format -i
