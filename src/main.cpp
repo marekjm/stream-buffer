@@ -226,7 +226,27 @@ static auto buffer_loop(std::atomic_bool& sentinel,
         }
     }
 
-    stream_data(buffer, std::nullopt, from, to);
+    {
+        /*
+         * Set the input file descriptor as non-blocking (to avoid hanging) and
+         * attempt to stream one last portion of data; ie, whatever is present
+         * in the pipe.
+         *
+         * If an error is encountered at any step just abort the operation!
+         * Otherwise you risk hanging the stream-buffer on the read(2) system
+         * call and it is surprisingly difficult to get out of that situation.
+         */
+        auto const flags = fcntl(from, F_GETFL);
+        if (flags != -1) {
+            if (fcntl(from, F_SETFL, flags | O_NONBLOCK) != -1) {
+                stream_data(buffer, std::nullopt, from, to);
+            }
+        }
+    }
+
+    /*
+     * Flush whatever data you can before exiting.
+     */
     flush(buffer.drain(), to);
 }
 static auto receive_commands(std::atomic_bool& sentinel, int const commands_fd)
