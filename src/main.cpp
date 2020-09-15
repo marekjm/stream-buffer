@@ -306,6 +306,12 @@ auto main(int argc, char** argv) -> int
         }
     }
 
+    try {
+        parse_buffer_size(buffer_size_arg);
+    } catch (std::out_of_range const&) {
+        std::cerr << "error: invalid size: " << buffer_size_arg << "\n";
+        return 1;
+    }
     auto const initial_buffer_size = parse_buffer_size(buffer_size_arg);
 
     {
