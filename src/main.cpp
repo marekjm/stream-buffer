@@ -297,7 +297,9 @@ static auto receive_commands(std::atomic_bool& sentinel, int const commands_fd)
 
             write(commands_fd, data.data(), data.size());
         } else {
+            auto const command = Commands::Nop;
             sentinel.store(true);
+            write(commands_fd, reinterpret_cast<uint8_t const*>(&command), 1);
         }
     }
 }

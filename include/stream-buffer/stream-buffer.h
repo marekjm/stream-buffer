@@ -27,7 +27,7 @@
 
 
 namespace Stream_buffer {
-constexpr auto VERSION = "0.2.0";
+constexpr auto VERSION = "0.2.1";
 
 
 struct Buffer {
