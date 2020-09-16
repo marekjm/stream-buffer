@@ -178,10 +178,13 @@ static auto buffer_loop(std::atomic_bool& sentinel,
         auto const nfds =
             epoll_wait(epoll_fd, events.data(), events.size(), -1);
         if (nfds == -1) {
-            std::cerr << "error: failed call to epoll_wait(2)\n";
-            kill(getpid(), SIGQUIT);
-            flush(buffer.drain(), to);
-            break;
+            auto const saved_errno = errno;
+            std::cerr << (
+                "error: failed call to epoll_wait(2): errno "
+                + std::to_string(saved_errno) + ": "
+                + strerror_r(saved_errno, nullptr, 0)
+                + "\n");
+            continue;
         }
         if (nfds == 0) {
             // FIXME isn't this a bug? no fds are ready and yet epoll_wait()
