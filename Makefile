@@ -187,7 +187,8 @@ MAN_PATH=$(PREFIX)/man
 	clean \
 	install \
 	uninstall \
-	format
+	format \
+	watch
 
 all: \
 	build/stream-buffer \
@@ -229,3 +230,6 @@ uninstall:
 format:
 	find ./src -name '*.cpp' | xargs -n 1 --verbose clang-format -i
 	find ./include -name '*.h' | xargs -n 1 --verbose clang-format -i
+
+watch:
+	(find . -name '*.h' ; find . -name '*.cpp') | entr -c make -j
